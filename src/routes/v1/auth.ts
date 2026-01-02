@@ -4,6 +4,9 @@ import * as controller from '../../controllers/auth.ts';
 
 const router = express.Router(); 
 
-router.get('/', controller.healthCheck); 
+router.get('/', controller.healthCheck);
+router.post('/signup', controller.signup);  
+router.post('/signin', controller.signin);  
+router.post('/signout', controller.signout);
 
 export default router; 
