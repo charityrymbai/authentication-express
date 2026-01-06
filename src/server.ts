@@ -1,6 +1,7 @@
 import express, { type Request, type Response } from 'express'; 
 import cors from 'cors';
 import dotenv from 'dotenv'; 
+import cookieParser from 'cookie-parser'; 
 
 import router from './routes/root.ts'; 
 import { errorMiddleware } from './middlewares/error.middleware.ts';
@@ -13,6 +14,7 @@ const port = process.env.PORT || 3000;
 const app = express(); 
 
 app.use(cors());
+app.use(cookieParser()); 
 
 app.use('/api', router);
 
