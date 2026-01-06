@@ -96,3 +96,85 @@ export function signout (req: Request, res:Response) {
     message: 'Sign out success', 
   })
 }; 
+
+export async function refreshAccessToken (req: Request, res:Response) {
+  const refreshToken = req.cookies['refresh-token']; 
+
+  const tokenPayload = verifyJWTToken(refreshToken); 
+
+  const token = await prisma.refreshTokens.findUnique({
+    where: {
+      jti: tokenPayload.jti, 
+    }
+  })
+
+  if (!token) {
+    return res.status(403).json({
+      message: 'Given token not in DB'
+    })
+  } else if (!token.isRevoked) {
+    const newJti = uuidv4(); 
+    const newRefreshToken = generateRefreshToken(
+      tokenPayload.userId, newJti); 
+
+    setTokenAsCookie(res, 'refresh-token', newRefreshToken);
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(newRefreshToken)
+      .digest("hex");
+
+    await prisma.$transaction(async (tx) => {
+      // old one revoked
+      await tx.refreshTokens.update({
+        where: {
+          jti: tokenPayload.jti
+        }, 
+        data: {
+          isRevoked: true, 
+          revokedAt: new Date()
+        }
+      })
+      // new refresh token generation
+      await tx.refreshTokens.create({
+        data: {
+          userId: token.userId,
+          tokenHash, 
+          jti: newJti, 
+          jtiFamily: token.jtiFamily, 
+          expiresAt: new Date(Date.now() + refreshTokenTTL * 1000)
+        }
+      })
+    })
+
+    return res.status(200).json({
+      message: 'success'
+    }); 
+  }
+
+  const isRecentlyRevoked =
+    token.isRevoked &&
+    token.revokedAt &&
+    Date.now() - token.revokedAt.getTime() < tokenReuseWindowInMS;
+
+  if (isRecentlyRevoked) {
+    return res.status(200).json({
+      message: 'Duplicate Refresh request'
+    });
+  } 
+    
+  console.log(`Suspicious activity for user = ${token.userId}. Revoking all tokens with same family...`); 
+  await prisma.refreshTokens.updateMany({
+    where: {
+      jtiFamily: token.jtiFamily, 
+      revokedAt: null
+    }, 
+    data: {
+      isRevoked: true, 
+      revokedAt: new Date()
+    }
+  })
+
+  return res.status(403).json({
+    message: 'Invalid Refresh Token'
+  }); 
+}
