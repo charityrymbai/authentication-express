@@ -8,3 +8,5 @@ export const SignUpSchema = z.object({
   email: z.email(),
   password: z.string().min(1).max(50)
 }); 
+
+export type SignUpPayload =  z.infer<typeof SignUpSchema>; 
