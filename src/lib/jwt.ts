@@ -1,3 +1,4 @@
+import type { UUID } from 'crypto';
 import jwt, { type JwtPayload } from 'jsonwebtoken'; 
 
 const jwtSecret = process.env.JWT_SECRET;
@@ -14,13 +15,13 @@ export const generateJWTToken = (data: any, expiresInMs: number) => {
   }, jwtSecret, { expiresIn: expiresInMs });
 }
 
-export const generateAccessToken = (userId: string) => {
+export const generateAccessToken = (userId: UUID) => {
   return generateJWTToken({userId}, accessTokenTTL); 
 }
 
 export const generateRefreshToken = (
-  userId: string, 
-  jti: string
+  userId: UUID, 
+  jti: UUID
 ) => {
   return generateJWTToken({
     userId, jti
