@@ -14,7 +14,7 @@ datasource db {
 }
 
 model Users {
-  id            String     @id @default(uuid())
+  id            String     @id @default(uuid()) @db.Uuid
 
   firstName     String  
   middleName    String?  
@@ -32,14 +32,14 @@ model Users {
 }
 
 model RefreshTokens {
-  jti           String   @id @default(uuid())
-  userId        String
+  jti           String   @id @default(uuid()) @db.Uuid
+  userId        String   @db.Uuid
   user          Users   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   tokenHash     String   @unique       
   jtiFamily     String     
 
-  userAgent     String?               
+  userAgent     String?            
   deviceName    String?             
   ipAddress     String?
 
