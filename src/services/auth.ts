@@ -1,0 +1,164 @@
+import { uuidv4 } from "zod";
+import type { SignUpPayload } from "../schemas/user";
+import { generateAccessToken, generateRefreshToken, verifyJWTToken } from "../lib/jwt";
+import { hash } from "bcrypt";
+import crypto, { type UUID } from 'crypto'; 
+import { prisma } from "../lib/prisma";
+import { parseDevice } from "../lib/userAgentParser";
+
+const refreshTokenTTL: number = parseInt(process.env.REFRESH_TOKEN_TTL_IN_SECS?? '') || 7*24*60*60;  //7days
+const tokenReuseWindowInMS = parseInt(process.env.TOKEN_REUSE_WINDOW_MS?? '5000'); 
+
+export const signUp = async (
+  payload: SignUpPayload,
+  context: {
+    userAgent: string | null, 
+    ipAddress: string | null
+  }
+): Promise<{refreshToken: string, accessToken: string}> => {
+  const {
+    firstName, 
+    middleName, 
+    lastName, 
+    email, 
+    password
+  } = payload;
+
+  const jti: UUID = uuidv4() as unknown as UUID;
+  const userId: UUID = uuidv4() as unknown as UUID;
+
+  const refreshToken = generateRefreshToken(userId, jti); 
+  const accessToken = generateAccessToken(userId);
+  
+  const passwordHashPromise = hash(password, 10);
+  const refreshTokenHashPromise = hash(refreshToken, 10); 
+  
+  const [ passwordHash, refreshTokenHash ] = await Promise.all([
+    passwordHashPromise, 
+    refreshTokenHashPromise
+  ])
+
+  const jtiFamily = crypto.randomBytes(32).toString("hex");
+
+  await prisma.$transaction(async (tx) => {
+    const user = await tx.users.create({
+      data: {
+        id: userId, 
+        firstName, 
+        middleName, 
+        lastName, 
+        email,
+        passwordHash
+      }
+    }); 
+
+    await tx.refreshTokens.create({
+      data: {
+        jti, 
+        jtiFamily, 
+        userId: user.id, 
+        tokenHash: refreshTokenHash,
+        expiresAt: new Date(Date.now() + refreshTokenTTL * 1000), 
+        userAgent: context.userAgent?? 'Unknown',
+        deviceName: context.userAgent? parseDevice(context.userAgent): 'Unknown',
+        ipAddress: context.ipAddress?? 'Unknown'
+      }
+    }); 
+
+    return { user, refreshToken}
+  })
+
+  return { refreshToken, accessToken }; 
+}
+
+type RefreshSuccess = {
+  type: "SUCCESS";
+  refreshToken: string;
+  accessToken: string;
+};
+
+type RefreshDuplicate = {
+  type: "DUPLICATE";
+};
+
+type RefreshInvalid = {
+  type: "INVALID";
+};
+
+export const refresh = async (refreshToken: string): Promise<
+  RefreshSuccess | RefreshDuplicate | RefreshInvalid
+> => {
+  const tokenPayload = verifyJWTToken(refreshToken); 
+
+  const token = await prisma.refreshTokens.findUnique({
+    where: {
+      jti: tokenPayload.jti, 
+    }
+  })
+
+  if (!token) {
+    return { type: 'INVALID' } 
+  } else if (!token.isRevoked) {
+    const newJti: UUID = uuidv4() as unknown as UUID; 
+    const newRefreshToken = generateRefreshToken(
+      tokenPayload.userId as unknown as UUID, newJti as unknown as UUID); 
+
+    const tokenHash = crypto
+      .createHash("sha256")
+      .update(newRefreshToken)
+      .digest("hex");
+    
+    const accessToken = generateAccessToken(tokenPayload.userId as unknown as UUID); 
+
+    await prisma.$transaction(async (tx) => {
+      // old one revoked
+      await tx.refreshTokens.update({
+        where: {
+          jti: tokenPayload.jti
+        }, 
+        data: {
+          isRevoked: true, 
+          revokedAt: new Date()
+        }
+      })
+      // new refresh token generation
+      await tx.refreshTokens.create({
+        data: {
+          userId: token.userId,
+          tokenHash, 
+          jti: newJti, 
+          jtiFamily: token.jtiFamily, 
+          expiresAt: new Date(Date.now() + refreshTokenTTL * 1000)
+        }
+      })
+    })
+    return { 
+      type: 'SUCCESS', 
+      refreshToken,
+      accessToken
+    } 
+  }
+
+  const isRecentlyRevoked =
+    token.isRevoked &&
+    token.revokedAt &&
+    Date.now() - token.revokedAt.getTime() < tokenReuseWindowInMS;
+
+  if (isRecentlyRevoked) {
+    return { type: 'DUPLICATE' }; 
+  } 
+    
+  console.log(`Suspicious activity for user = ${token.userId}. Revoking all tokens with same family...`); 
+  await prisma.refreshTokens.updateMany({
+    where: {
+      jtiFamily: token.jtiFamily, 
+      revokedAt: null
+    }, 
+    data: {
+      isRevoked: true, 
+      revokedAt: new Date()
+    }
+  })
+
+  return { type: 'INVALID' };  
+}
