@@ -31,6 +31,12 @@ export function errorMiddleware(
           error_type: "Conflict",
           message: "Email already registered"
         }); 
+      } else {
+        return res.status(409).json({
+          status: 'error', 
+          error_type: 'Conflict', 
+          message: 'Resource already exists'
+        }); 
       }
     }
   } else if (err instanceof TokenExpiredError ||
