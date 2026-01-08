@@ -17,3 +17,9 @@ export const SignInSchema = z.object({
 }); 
 
 export type SignInPayload = z.infer<typeof SignInSchema>; 
+
+export const GetAllSessionsSchema = z.object({
+  userId: z.uuid(),
+}); 
+
+export type GeTAllSessionsPayload = z.infer<typeof GetAllSessionsSchema>; 

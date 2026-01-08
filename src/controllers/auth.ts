@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 
-import { SignInSchema, SignUpSchema } from "../schemas/user";
+import { GetAllSessionsSchema, SignInSchema, SignUpSchema } from "../schemas/auth.ts";
 import { setTokenAsCookie } from "../lib/cookie";
 import * as  services from '../services/auth.ts'; 
 
@@ -89,5 +89,25 @@ export async function refreshAccessToken (req: Request, res:Response) {
       return res.status(400).json({
         message: 'Invalid Token Refresh Request'
       })
+  }
+}
+
+export async function getAllSessions (req: Request, res: Response) {
+  const payload = req.body; 
+
+  const parsedPayload = GetAllSessionsSchema.parse(payload); 
+
+  const result = await services.getAllSessions(parsedPayload); 
+
+  switch (result.type) {
+    case 'SUCCESS': 
+      return res.status(200).json({
+        message: 'success', 
+        sessions: result.sessions
+      }); 
+    case 'INVALID': 
+      return res.status(400).json({
+        message: 'Sign In failed'
+      }); 
   }
 }

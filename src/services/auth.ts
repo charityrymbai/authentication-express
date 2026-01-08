@@ -1,5 +1,5 @@
-import { uuidv4 } from "zod";
-import type { SignInPayload, SignUpPayload } from "../schemas/user";
+import { uuidv4 } from "../lib/uuid";
+import type { GeTAllSessionsPayload, SignInPayload, SignUpPayload } from "../schemas/auth";
 import { generateAccessToken, generateRefreshToken, verifyJWTToken } from "../lib/jwt";
 import { compare, hash } from "bcrypt";
 import crypto, { type UUID } from 'crypto'; 
@@ -94,6 +94,8 @@ export const signin = async (
   if (!user) {
     return { type: 'INVALID' }; 
   } 
+
+  console.log('USER_ID: ', user.id); 
 
   const isPasswordValid = await compare(payload.password, user.passwordHash); 
 
@@ -218,3 +220,51 @@ export const refresh = async (refreshToken: string): Promise<
 
   return { type: 'INVALID' };  
 }
+
+export type Session = {
+  deviceName: string | null;
+  userAgent: string | null;
+  ipAddress: string | null;
+  createdAt: Date
+};
+
+type GetAllSessionsSuccess = {
+  type: 'SUCCESS', 
+  sessions: Session[], 
+}
+
+type GetAllSessionsInvalid = {
+  type: 'INVALID' 
+}
+
+
+export const getAllSessions = async (payload: GeTAllSessionsPayload): Promise<
+  GetAllSessionsSuccess | GetAllSessionsInvalid
+> => {
+  if (!payload.userId) {
+    return { type: 'INVALID' }; 
+  }
+  const rawSessions = await prisma.refreshTokens.findMany({
+    where: {
+      userId: payload.userId,
+      isRevoked: false
+    },
+    select: {
+      deviceName: true,
+      userAgent: true,
+      ipAddress: true,
+      createdAt: true
+    }
+  });
+
+  const validSince = Date.now() - refreshTokenTTL * 1000;
+
+  const sessions = rawSessions.filter(
+    s => s.createdAt.getTime() > validSince
+  );
+
+  return {
+    type: 'SUCCESS', 
+    sessions
+  }
+};
