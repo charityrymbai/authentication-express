@@ -5,6 +5,7 @@ import { hash } from "bcrypt";
 import crypto, { type UUID } from 'crypto'; 
 import { prisma } from "../lib/prisma";
 import { parseDevice } from "../lib/userAgentParser";
+import { hashUsingSha256 } from "../lib/crypto";
 
 const refreshTokenTTL: number = parseInt(process.env.REFRESH_TOKEN_TTL_IN_SECS?? '') || 7*24*60*60;  //7days
 const tokenReuseWindowInMS = parseInt(process.env.TOKEN_REUSE_WINDOW_MS?? '5000'); 
@@ -30,13 +31,8 @@ export const signUp = async (
   const refreshToken = generateRefreshToken(userId, jti); 
   const accessToken = generateAccessToken(userId);
   
-  const passwordHashPromise = hash(password, 10);
-  const refreshTokenHashPromise = hash(refreshToken, 10); 
-  
-  const [ passwordHash, refreshTokenHash ] = await Promise.all([
-    passwordHashPromise, 
-    refreshTokenHashPromise
-  ])
+  const passwordHash = await hash(password, 10);
+  const refreshTokenHash = hashUsingSha256(refreshToken); 
 
   const jtiFamily = crypto.randomBytes(32).toString("hex");
 
@@ -103,10 +99,7 @@ export const refresh = async (refreshToken: string): Promise<
     const newRefreshToken = generateRefreshToken(
       tokenPayload.userId as unknown as UUID, newJti as unknown as UUID); 
 
-    const tokenHash = crypto
-      .createHash("sha256")
-      .update(newRefreshToken)
-      .digest("hex");
+    const tokenHash = hashUsingSha256(newRefreshToken); 
     
     const accessToken = generateAccessToken(tokenPayload.userId as unknown as UUID); 
 
