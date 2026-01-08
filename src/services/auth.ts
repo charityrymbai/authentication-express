@@ -1,7 +1,7 @@
 import { uuidv4 } from "zod";
-import type { SignUpPayload } from "../schemas/user";
+import type { SignInPayload, SignUpPayload } from "../schemas/user";
 import { generateAccessToken, generateRefreshToken, verifyJWTToken } from "../lib/jwt";
-import { hash } from "bcrypt";
+import { compare, hash } from "bcrypt";
 import crypto, { type UUID } from 'crypto'; 
 import { prisma } from "../lib/prisma";
 import { parseDevice } from "../lib/userAgentParser";
@@ -65,6 +65,69 @@ export const signUp = async (
   })
 
   return { refreshToken, accessToken }; 
+}
+
+type SignInSuccess = {
+  type: "SUCCESS";
+  refreshToken: string;
+  accessToken: string; 
+}
+
+type SignInInvalid = {
+  type: 'INVALID'
+}
+
+export const signin = async (
+  payload: SignInPayload,
+  context: {
+    userAgent: string | null, 
+    ipAddress: string | null
+  }): Promise<
+  SignInSuccess | SignInInvalid
+> => { 
+  const user = await prisma.users.findUnique({
+    where: {
+      email: payload.email, 
+    }
+  }); 
+
+  if (!user) {
+    return { type: 'INVALID' }; 
+  } 
+
+  const isPasswordValid = await compare(payload.password, user.passwordHash); 
+
+  if (!isPasswordValid) {
+    return { type: 'INVALID' }; 
+  } 
+
+  const newJti: UUID = uuidv4() as unknown as UUID; 
+  const userId: UUID = user.id as unknown as UUID;
+  const jtiFamily = crypto.randomBytes(32).toString("hex");
+
+  const refreshToken = generateRefreshToken(userId, newJti)
+  const accessToken = generateAccessToken(userId); 
+
+  const refreshTokenHash = hashUsingSha256(refreshToken); 
+
+  await prisma.refreshTokens.create({
+    data: {
+      jti: newJti, 
+      jtiFamily, 
+      userId, 
+      tokenHash: refreshTokenHash, 
+      expiresAt: new Date(Date.now() + refreshTokenTTL * 1000), 
+      userAgent: context.userAgent?? 'Unknown', 
+      deviceName: context.userAgent? parseDevice(context.userAgent): 'Unknown', 
+      ipAddress: context.ipAddress?? 'Unknown'
+    }
+  })
+
+  return { 
+    type: 'SUCCESS', 
+    refreshToken, 
+    accessToken
+   }
 }
 
 type RefreshSuccess = {

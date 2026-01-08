@@ -10,3 +10,10 @@ export const SignUpSchema = z.object({
 }); 
 
 export type SignUpPayload =  z.infer<typeof SignUpSchema>; 
+
+export const SignInSchema = z.object({
+  email: z.email(), 
+  password: z.string().min(1).max(50), 
+}); 
+
+export type SignInPayload = z.infer<typeof SignInSchema>; 

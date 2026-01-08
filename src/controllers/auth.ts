@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 
-import { SignUpSchema } from "../schemas/user";
+import { SignInSchema, SignUpSchema } from "../schemas/user";
 import { setTokenAsCookie } from "../lib/cookie";
 import * as  services from '../services/auth.ts'; 
 
@@ -36,11 +36,29 @@ export async function signup (req: Request, res:Response) {
   })
 };
 
-export function signin (req: Request, res:Response) {
-  res.status(200).json({
-    status: 'success', 
-    message: 'Sign in success', 
-  })
+export async function signin (req: Request, res:Response) {
+  const payload = await req.body;
+  
+  const parsedPayload = SignInSchema.parse(payload);
+
+  const context = {
+    userAgent: req.headers['user-agent']?? null, 
+    ipAddress: req.ip?? null,
+  }
+  const result = await services.signin(parsedPayload, context); 
+
+  switch (result.type) {
+    case 'SUCCESS': 
+      setTokenAsCookie(res, 'refresh-token', result.refreshToken); 
+      setTokenAsCookie(res, 'access-token', result.accessToken); 
+      return res.status(200).json({
+        message: 'success'
+      })
+    case 'INVALID': 
+      return res.status(400).json({
+        message: 'not successful'
+      }); 
+  }
 };
 
 export function signout (req: Request, res:Response) {
