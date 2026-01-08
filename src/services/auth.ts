@@ -244,7 +244,7 @@ export const getAllSessions = async (payload: GeTAllSessionsPayload): Promise<
   if (!payload.userId) {
     return { type: 'INVALID' }; 
   }
-  const rawSessions = await prisma.refreshTokens.findMany({
+  const sessions = await prisma.refreshTokens.findMany({
     where: {
       userId: payload.userId,
       isRevoked: false
@@ -256,12 +256,6 @@ export const getAllSessions = async (payload: GeTAllSessionsPayload): Promise<
       createdAt: true
     }
   });
-
-  const validSince = Date.now() - refreshTokenTTL * 1000;
-
-  const sessions = rawSessions.filter(
-    s => s.createdAt.getTime() > validSince
-  );
 
   return {
     type: 'SUCCESS', 
